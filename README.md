@@ -80,7 +80,8 @@ pds github <dep> dist
 | `pkg_include` | package.json fields to include from source | (see below) |
 | `pkg_exclude` | package.json fields to exclude | `''` |
 | `pkg_kvs` | JSON object of package.json overrides | `''` |
-| `on_source_rewrite` | How to handle force-pushes to source ref: `rewrite` (walk dist back to a shared ancestor and rebuild on top), `preserve` (chain onto current dist tip), `error` (fail if dist tip's source-parent isn't an ancestor of the new source SHA) | `'rewrite'` |
+| `on_source_rewrite` | How to handle force-pushes to source ref: `rewrite` (walk dist back to a shared ancestor and rebuild on top; fail if there is none), `preserve` (chain onto current dist tip), `error` (fail if dist tip's source-parent isn't an ancestor of the new source SHA), `fresh` (start a new dist lineage). See [Rebased / force-pushed source](#rebased--force-pushed-source-starting-a-fresh-dist-lineage) | `'rewrite'` |
+| `old_dist_tag` | Tag for an old dist tip the new dist commit doesn't descend from (`{branch}`, `{sha}` placeholders; `none` disables) | `'{branch}-{sha}'` |
 
 Default `pkg_include` fields: `name,description,keywords,repository,author,license,homepage,bugs,exports`
 
@@ -142,6 +143,25 @@ A repo that publishes **more than one** dist branch (e.g. a monorepo running one
 ```
 
 **The one constraint — git's directory/file (D/F) rule:** git stores each branch as a file under `refs/heads/`, so a bare `dist` branch (the file `refs/heads/dist`) and `dist/<anything>` (which needs `refs/heads/dist` to be a *directory*) **cannot coexist**. A repo currently on the default bare `dist` must first rename it (e.g. to `dist/<pkg>`) before adding another `dist/<x>` — its old SHA pins keep resolving, since SHAs are immutable. npm-dist detects this conflict before building and fails with an actionable message rather than a cryptic git error. For this reason the default stays bare `dist`; namespacing is opt-in.
+
+### Rebased / force-pushed source: starting a fresh dist lineage
+
+With no dist branch yet, every mode does a first build: the new dist commit's only parent is the source commit. After that, when the source ref is force-pushed, `on_source_rewrite` decides the new dist commit's first parent. The default, `rewrite`, walks back to the newest dist commit whose source commit still exists in the new history and builds on top of it. If none does (e.g. after rebasing a fork onto a new upstream release), the build **fails** without changing anything.
+
+To start over instead, use `fresh`: a first build even though the branch exists (source commit as the only parent, `package.json` regenerated from source), force-pushed over the old dist branch. To use it for **one push**, with no config change, add a [git trailer] to the pushed tip commit's message, e.g. by amending it:
+
+```bash
+git commit --amend --no-edit --trailer "NPM-Dist-On-Source-Rewrite: fresh"
+git push -f
+```
+
+The trailer overrides `on_source_rewrite` for that build only (only the pushed tip commit's message is read), and later pushes use the configured mode again, chaining onto the new lineage. Since the trailer stays in that commit's message, it's ignored once the dist branch has been built from that commit (or a descendant): re-running the build for it doesn't start yet another lineage. Setting `on_source_rewrite` itself to `fresh` would instead apply to every build.
+
+Whenever the new dist commit doesn't descend from the old dist tip (`fresh`, or `rewrite` walking back past dist commits built from since-rewritten source commits), the old tip is **tagged and pushed** first, so dist SHAs that consumers have pinned stay reachable (and aren't garbage-collected). If a tag with that name already exists at a different commit, the build fails before anything is force-pushed. Pushing that tag doesn't start a CI run: a tag push runs the CI config in the tagged commit's tree, and a dist commit has none (on GitHub, pushes made with `GITHUB_TOKEN` don't trigger workflows anyway).
+
+The tag defaults to `{branch}-{sha}`: the dist branch plus the 7-char SHA of the old tip's source commit, matching its `-dist.<sha>` version suffix (e.g. `dist-6b27ac9`, `dist/treemap-6b27ac9`). Set `old_dist_tag` (or trailer `NPM-Dist-Old-Dist-Tag: <template>`) to another template or literal name, or to `none` to skip tagging. An empty value means the default (so a workflow that forwards an unset input doesn't silently disable tagging).
+
+[git trailer]: https://git-scm.com/docs/git-interpret-trailers
 
 ## Used By
 

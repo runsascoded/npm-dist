@@ -94,7 +94,8 @@ jobs:
 | `pkg_include` | package.json fields to include from source | (see above) |
 | `pkg_exclude` | package.json fields to exclude | `''` |
 | `pkg_kvs` | JSON object of package.json overrides | `''` |
-| `on_source_rewrite` | Force-push handling: `rewrite` (walk back to shared ancestor), `preserve` (chain onto tip), `error` (fail) | `'rewrite'` |
+| `on_source_rewrite` | Force-push handling: `rewrite` (walk back to shared ancestor), `preserve` (chain onto tip), `error` (fail), `fresh` (new lineage). Per-push override: `NPM-Dist-On-Source-Rewrite: <mode>` commit trailer | `'rewrite'` |
+| `old_dist_tag` | Tag for an old dist tip the new commit doesn't descend from (`{branch}`, `{sha}`; `none` disables). Trailer: `NPM-Dist-Old-Dist-Tag` | `'{branch}-{sha}'` |
 
 ## Implementation Tasks
 

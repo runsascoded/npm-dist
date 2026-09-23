@@ -9,11 +9,16 @@ PKGS="${PKGS:-}"
 PACKAGE_DIR="${PACKAGE_DIR:-}"
 VERSION_SUFFIX="${VERSION_SUFFIX:-true}"
 ON_SOURCE_REWRITE="${ON_SOURCE_REWRITE:-rewrite}"
+OLD_DIST_TAG="${OLD_DIST_TAG:-}"
 
 # shellcheck source=./find-dist-parent.sh
 source "$(dirname "${BASH_SOURCE[0]}")/find-dist-parent.sh"
 # shellcheck source=./check-dist-branch.sh
 source "$(dirname "${BASH_SOURCE[0]}")/check-dist-branch.sh"
+
+# A commit trailer on the source commit can override this for a single push (likewise
+# on_source_rewrite; resolved below, once the dist tip is known)
+OLD_DIST_TAG=$(resolve_old_dist_tag "$SOURCE_SHA" "${OLD_DIST_TAG:-"{branch}-{sha}"}")
 
 # package_dir mode: a single subdir package, flattened to the dist branch ROOT
 # (its own package.json at root, no workspace wrapper) so a git dep resolves it
@@ -123,6 +128,7 @@ check_dist_branch "$DIST_BRANCH" origin
 # Fetch dist branch if it exists
 if git fetch origin "$DIST_BRANCH:$DIST_BRANCH" 2>/dev/null; then
   git checkout "$DIST_BRANCH"
+  ON_SOURCE_REWRITE=$(resolve_rewrite_mode "$SOURCE_SHA" "$ON_SOURCE_REWRITE" "$(git rev-parse HEAD)")
 else
   git checkout --orphan "$DIST_BRANCH"
 fi
@@ -169,8 +175,17 @@ Built from ${SOURCE_SHA}"
 fi
 
 if DIST_TIP=$(git rev-parse --verify HEAD 2>/dev/null); then
+  # dist branch exists: create merge commit with two parents
+  # Parent 1: previous dist commit (or an earlier one, if source was force-pushed; see find_dist_parent)
+  # Parent 2: source commit from main
+  # In fresh mode (empty DIST_PARENT), start a new lineage: the source commit is the only parent.
   DIST_PARENT=$(find_dist_parent "$DIST_TIP" "$SOURCE_SHA" "$ON_SOURCE_REWRITE")
-  COMMIT=$(git commit-tree "$TREE" -p "$DIST_PARENT" -p "$SOURCE_SHA" -m "$COMMIT_MSG")
+  preserve_old_dist "$DIST_TIP" "$DIST_PARENT" "$DIST_BRANCH" "$OLD_DIST_TAG"
+  if [ -n "$DIST_PARENT" ]; then
+    COMMIT=$(git commit-tree "$TREE" -p "$DIST_PARENT" -p "$SOURCE_SHA" -m "$COMMIT_MSG")
+  else
+    COMMIT=$(git commit-tree "$TREE" -p "$SOURCE_SHA" -m "$COMMIT_MSG")
+  fi
 else
   COMMIT=$(git commit-tree "$TREE" -p "$SOURCE_SHA" -m "$COMMIT_MSG")
 fi

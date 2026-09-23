@@ -173,6 +173,71 @@ m0=$(commit m0)
 d0=$(dist_commit "d0" "$m0")
 check_fails "invalid mode → error" find_dist_parent "$d0" "$m0" "bogus"
 
+# ----- Scenario 10: fresh mode → empty parent (new lineage), even when ancestry exists -----
+reset_repo
+m0=$(commit m0)
+d0=$(dist_commit "d0" "$m0")
+m1=$(commit m1)
+result=$(find_dist_parent "$d0" "$m1" "fresh")
+check "fresh mode → empty parent" "" "$result"
+
+# ----- Scenario 11: commit trailer overrides mode; absent trailer keeps input mode -----
+reset_repo
+m0=$(commit m0)
+git commit --allow-empty -q -m "Rebuild dist" -m "NPM-Dist-On-Source-Rewrite: fresh"
+m1=$(git rev-parse HEAD)
+check "trailer overrides mode" "fresh" "$(resolve_rewrite_mode "$m1" rewrite 2>/dev/null)"
+check "no trailer → input mode" "error" "$(resolve_rewrite_mode "$m0" error 2>/dev/null)"
+check "trailer key is case-insensitive" "fresh" "$(git commit --allow-empty -q -m x -m "npm-dist-on-source-rewrite: fresh" && resolve_rewrite_mode HEAD rewrite 2>/dev/null)"
+git commit --allow-empty -q -m y -m "NPM-Dist-Old-Dist-Tag: keep-{sha}"
+check "old-dist-tag trailer overrides template" "keep-{sha}" "$(resolve_old_dist_tag HEAD "{branch}-{sha}")"
+check "no old-dist-tag trailer → template" "{branch}-{sha}" "$(resolve_old_dist_tag "$m0" "{branch}-{sha}")"
+
+# ----- Scenario 12: old_dist_tag_name expands the old tip's *source* short SHA -----
+reset_repo
+m0=$(commit m0)
+d0=$(dist_commit "d0" "$m0")
+m1=$(commit m1)
+d1=$(dist_commit "d1" "$d0" "$m1")
+check "tag name: merge tip → ^2 source sha" "dist-${m1:0:7}" "$(old_dist_tag_name "$d1" dist "{branch}-{sha}")"
+check "tag name: initial tip → ^1 source sha" "dist/treemap-${m0:0:7}" "$(old_dist_tag_name "$d0" dist/treemap "{branch}-{sha}")"
+check "tag name: literal template" "old-dist" "$(old_dist_tag_name "$d1" dist old-dist)"
+check "tag name: none → empty" "" "$(old_dist_tag_name "$d1" dist none)"
+
+# ----- Scenario 13: preserve_old_dist tags + pushes the old tip; no-op when descending -----
+reset_repo
+git init -q --bare "$WORK/remote.git"
+git --git-dir="$WORK/remote.git" config receive.advertisePushOptions true  # as GitLab does (gl pushes tags with -o ci.skip)
+git remote add origin "$WORK/remote.git"
+m0=$(commit m0)
+d0=$(dist_commit "d0" "$m0")
+m1=$(commit m1)
+d1=$(dist_commit "d1" "$d0" "$m1")
+preserve_old_dist "$d1" "$d1" dist "{branch}-{sha}" >/dev/null
+check "descending build → no tag" "" "$(git tag -l)"
+preserve_old_dist "$d1" "" dist "{branch}-{sha}" >/dev/null
+check "fresh → local tag at old tip" "$d1" "$(git rev-parse "dist-${m1:0:7}^{commit}")"
+check "fresh → tag pushed to remote" "$d1" "$(git --git-dir="$WORK/remote.git" rev-parse "dist-${m1:0:7}^{commit}")"
+preserve_old_dist "$d1" "$d0" dist "{branch}-{sha}" >/dev/null
+check "re-tagging same tip is idempotent" "$d1" "$(git rev-parse "dist-${m1:0:7}^{commit}")"
+git tag -f clash "$d0"
+check_fails "tag exists at another commit → error" preserve_old_dist "$d1" "" dist clash
+preserve_old_dist "$d1" "" dist none 2>/dev/null
+check "old_dist_tag=none → no new tag" "clash dist-${m1:0:7}" "$(git tag -l | sort | xargs)"
+
+# ----- Scenario 14: trailer ignored once dist was already built from that commit -----
+reset_repo
+m0=$(commit m0)
+d0=$(dist_commit "d0" "$m0")
+git commit --allow-empty -q -m "Rebuild dist" -m "NPM-Dist-On-Source-Rewrite: fresh"
+m1=$(git rev-parse HEAD)
+check "dist tip not yet built from trailer commit → trailer applies" "fresh" "$(resolve_rewrite_mode "$m1" rewrite "$d0" 2>/dev/null)"
+d1=$(dist_commit "d1" "$m1")  # the fresh build: source commit as only parent
+check "re-run for same commit (tip built from it) → trailer ignored" "rewrite" "$(resolve_rewrite_mode "$m1" rewrite "$d1" 2>/dev/null)"
+m2=$(commit m2)
+d2=$(dist_commit "d2" "$d1" "$m2")
+check "re-run for trailer commit after dist moved past it → trailer ignored" "rewrite" "$(resolve_rewrite_mode "$m1" rewrite "$d2" 2>/dev/null)"
+
 echo ""
 echo "================================"
 echo "Passed: $PASS / $((PASS + FAIL))"

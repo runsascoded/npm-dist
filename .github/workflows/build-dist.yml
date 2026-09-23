@@ -71,9 +71,13 @@ on:
         type: string
         default: ''
       on_source_rewrite:
-        description: 'Force-push handling: "rewrite" (walk back to shared ancestor), "preserve" (chain onto tip), "error" (fail)'
+        description: 'Force-push handling: "rewrite" (walk back to shared ancestor), "preserve" (chain onto tip), "error" (fail), "fresh" (new lineage). A "NPM-Dist-On-Source-Rewrite: <mode>" source-commit trailer overrides this.'
         type: string
         default: 'rewrite'
+      old_dist_tag:
+        description: 'Tag for an old dist tip the new commit does not descend from ({branch}, {sha} placeholders; "none" disables)'
+        type: string
+        default: '{branch}-{sha}'
 
 jobs:
   build-dist:
@@ -101,3 +105,4 @@ jobs:
           pkgs: ${{ inputs.pkgs }}
           package_dir: ${{ inputs.package_dir }}
           on_source_rewrite: ${{ inputs.on_source_rewrite }}
+          old_dist_tag: ${{ inputs.old_dist_tag }}

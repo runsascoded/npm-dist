@@ -13,6 +13,7 @@ PKG_EXCLUDE="${PKG_EXCLUDE:-}"
 PKG_KVS="${PKG_KVS:-}"
 EXPORTS_MAP="${EXPORTS_MAP:-}"
 ON_SOURCE_REWRITE="${ON_SOURCE_REWRITE:-rewrite}"
+OLD_DIST_TAG="${OLD_DIST_TAG:-}"
 
 # shellcheck source=./find-dist-parent.sh
 source "$(dirname "${BASH_SOURCE[0]}")/find-dist-parent.sh"
@@ -20,6 +21,10 @@ source "$(dirname "${BASH_SOURCE[0]}")/find-dist-parent.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/merge-dist-package.sh"
 # shellcheck source=./check-dist-branch.sh
 source "$(dirname "${BASH_SOURCE[0]}")/check-dist-branch.sh"
+
+# A commit trailer on the source commit can override this for a single push (likewise
+# on_source_rewrite; resolved below, once the dist tip is known)
+OLD_DIST_TAG=$(resolve_old_dist_tag "$SOURCE_SHA" "${OLD_DIST_TAG:-"{branch}-{sha}"}")
 
 # Resolve preserve_dirs (with source_dirs deprecation)
 if [ -n "$PRESERVE_DIRS" ] && [ -n "$SOURCE_DIRS" ]; then
@@ -104,8 +109,10 @@ DIST_EXISTS=false
 if git fetch origin "$DIST_BRANCH:$DIST_BRANCH" 2>/dev/null; then
   git checkout -f "$DIST_BRANCH"
   DIST_EXISTS=true
-  # Save existing package.json from dist branch
-  if [ -f package.json ]; then
+  ON_SOURCE_REWRITE=$(resolve_rewrite_mode "$SOURCE_SHA" "$ON_SOURCE_REWRITE" "$(git rev-parse HEAD)")
+  # Save existing package.json from dist branch (not in fresh mode: a new lineage
+  # regenerates it from source, as on a first build)
+  if [ -f package.json ] && [ "$ON_SOURCE_REWRITE" != fresh ]; then
     cp package.json package.json.dist
   fi
 else
@@ -321,8 +328,14 @@ if DIST_TIP=$(git rev-parse --verify HEAD 2>/dev/null); then
   # dist branch exists: create merge commit with two parents
   # Parent 1: previous dist commit (or an earlier one, if source was force-pushed; see find_dist_parent)
   # Parent 2: source commit from main
+  # In fresh mode (empty DIST_PARENT), start a new lineage: the source commit is the only parent.
   DIST_PARENT=$(find_dist_parent "$DIST_TIP" "$SOURCE_SHA" "$ON_SOURCE_REWRITE")
-  COMMIT=$(git commit-tree "$TREE" -p "$DIST_PARENT" -p "$SOURCE_SHA" -m "$COMMIT_MSG")
+  preserve_old_dist "$DIST_TIP" "$DIST_PARENT" "$DIST_BRANCH" "$OLD_DIST_TAG"
+  if [ -n "$DIST_PARENT" ]; then
+    COMMIT=$(git commit-tree "$TREE" -p "$DIST_PARENT" -p "$SOURCE_SHA" -m "$COMMIT_MSG")
+  else
+    COMMIT=$(git commit-tree "$TREE" -p "$SOURCE_SHA" -m "$COMMIT_MSG")
+  fi
 else
   # First dist commit: single parent (source commit)
   COMMIT=$(git commit-tree "$TREE" -p "$SOURCE_SHA" -m "$COMMIT_MSG")

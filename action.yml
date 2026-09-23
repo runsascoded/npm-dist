@@ -71,9 +71,13 @@ inputs:
     required: false
     default: ''
   on_source_rewrite:
-    description: 'How to handle a force-push of the source ref. "rewrite" (default): walk back to the most recent dist commit whose source-parent is still an ancestor of the new source SHA, rebuild on top of it (dist ancestry mirrors source ancestry). "preserve": always chain onto the current dist tip (may retain references to abandoned source commits). "error": fail if the dist tip''s source-parent is not an ancestor of the new source SHA.'
+    description: 'How to choose the new dist commit''s first parent when the source ref was force-pushed. "rewrite" (default): walk back to the most recent dist commit whose source-parent is still an ancestor of the new source SHA, rebuild on top of it (dist ancestry mirrors source ancestry); errors if there is none. "preserve": always chain onto the current dist tip (may retain references to abandoned source commits). "error": fail if the dist tip''s source-parent is not an ancestor of the new source SHA. "fresh": start a new dist lineage (the source commit is the only parent; package.json regenerated as on a first build). A "NPM-Dist-On-Source-Rewrite: <mode>" trailer on the source commit overrides this, for one push.'
     required: false
     default: 'rewrite'
+  old_dist_tag:
+    description: 'When the new dist commit does not descend from the old dist tip (fresh, or rewrite walking back), tag the old tip so pinned SHAs stay reachable. Template: {branch} = dist branch, {sha} = 7-char SHA of the old tip''s source commit. "none" disables. A "NPM-Dist-Old-Dist-Tag: <template>" source-commit trailer overrides this.'
+    required: false
+    default: '{branch}-{sha}'
 
 runs:
   using: 'composite'
@@ -180,6 +184,7 @@ runs:
         PKG_KVS: ${{ inputs.pkg_kvs }}
         EXPORTS_MAP: ${{ inputs.exports_map }}
         ON_SOURCE_REWRITE: ${{ inputs.on_source_rewrite }}
+        OLD_DIST_TAG: ${{ inputs.old_dist_tag }}
       run: ${{ github.action_path }}/scripts/build-dist.sh ${{ steps.prebuilt_info.outputs.source_sha || steps.info.outputs.source_sha }}
 
     - name: Commit to dist branch (monorepo / package_dir mode)
@@ -191,6 +196,7 @@ runs:
         PACKAGE_DIR: ${{ inputs.package_dir }}
         VERSION_SUFFIX: ${{ inputs.version_suffix }}
         ON_SOURCE_REWRITE: ${{ inputs.on_source_rewrite }}
+        OLD_DIST_TAG: ${{ inputs.old_dist_tag }}
       run: ${{ github.action_path }}/scripts/build-dist-monorepo.sh ${{ steps.prebuilt_info.outputs.source_sha || steps.info.outputs.source_sha }}
 
     - name: Get dist SHA
