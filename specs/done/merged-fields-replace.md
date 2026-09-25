@@ -35,3 +35,11 @@ Fields *not* in `$fields_csv` still come from `$dist`, which is the point of mer
 ## Workaround until then
 
 Add a non-empty `exports_map` for one publish; the drop-missing-exports pass removes the stale keys. Remove it after, since it also silently drops genuinely broken exports.
+
+## Implementation (done)
+
+- `merge-dist-package.sh` (gh + gl): `$dist + $merge_obj` (top-level replace) instead of `$dist * $merge_obj`.
+- Extended to the same bug's other form: a listed field **absent** from source used to keep its dist value (e.g. dropping `bin`, or the last dependency, left stale values published). Now every listed field is set from source, and absent ones (`null`) are removed by the existing `with_entries(select(.value != null))`. Source is authoritative for listed fields; unlisted fields still come from `$dist`.
+- No other caller relied on the deep merge; `pkg_kvs` (`. * $kvs`, applied afterwards) is separate and intentionally still deep.
+- Tests (`tests/test-merge-dist-package.sh`, 9 cases, gh + gl): removed `exports` key; removed dependency (with an unlisted object field kept from dist); listed fields absent from source removed (replaces the old "dist value retained" case). The 3 new/changed cases fail on the old implementation.
+- Docs: README "How It Works" (gh + gl) and `CLAUDE.md` describe replace-not-merge.

@@ -115,16 +115,16 @@ actual=$(merge_dist_package_json dist.json src.json "dist" "name,version" "")
 expected='{ "name": "pkg", "version": "0.2.0", "scripts": { "custom": "ok" } }'
 check_json "non-listed fields kept from dist" "$expected" "$actual"
 
-# ----- Scenario 6: missing source field is skipped (dist value retained) -----
+# ----- Scenario 6: listed field absent from source is removed from dist -----
 cat > dist.json <<'EOF'
-{ "name": "pkg", "version": "0.1.0", "exports": { "./dist/*": "./dist/*" } }
+{ "name": "pkg", "version": "0.1.0", "bin": { "pkg": "./cli.js" }, "exports": { "./dist/*": "./dist/*" } }
 EOF
 cat > src.json <<'EOF'
 { "name": "pkg", "version": "0.2.0" }
 EOF
-actual=$(merge_dist_package_json dist.json src.json "dist" "name,version,exports" "dist")
-expected='{ "name": "pkg", "version": "0.2.0", "exports": { "./dist/*": "./dist/*" } }'
-check_json "missing source field: dist value retained" "$expected" "$actual"
+actual=$(merge_dist_package_json dist.json src.json "dist" "name,version,bin,exports" "dist")
+expected='{ "name": "pkg", "version": "0.2.0" }'
+check_json "listed fields absent from source: removed from dist" "$expected" "$actual"
 
 # ----- Scenario 7: preserve mode treats any non-empty preserve_dirs as preserve -----
 # Even if it's an unrelated dir (lib), preserve mode is signaled by non-empty string.
@@ -137,6 +137,28 @@ EOF
 actual=$(merge_dist_package_json dist.json src.json "dist" "name,exports" "lib")
 expected='{ "name": "pkg", "exports": { "./dist/*": "./dist/*" } }'
 check_json "preserve mode signal: any non-empty preserve_dirs disables flattening" "$expected" "$actual"
+
+# ----- Scenario 8: source exports replace dist exports (removed keys don't survive) -----
+cat > dist.json <<'EOF'
+{ "name": "pkg", "exports": { ".": "./index.js", "./old": "./old.js" } }
+EOF
+cat > src.json <<'EOF'
+{ "name": "pkg", "exports": { ".": "./dist/index.js" } }
+EOF
+actual=$(merge_dist_package_json dist.json src.json "dist" "name,exports" "")
+expected='{ "name": "pkg", "exports": { ".": "./index.js" } }'
+check_json "exports key removed in source is removed on dist" "$expected" "$actual"
+
+# ----- Scenario 9: dependencies losing a key -----
+cat > dist.json <<'EOF'
+{ "name": "pkg", "dependencies": { "a": "^1.0.0", "b": "^2.0.0" }, "custom": { "x": 1 } }
+EOF
+cat > src.json <<'EOF'
+{ "name": "pkg", "dependencies": { "a": "^1.1.0" }, "custom": { "y": 2 } }
+EOF
+actual=$(merge_dist_package_json dist.json src.json "dist" "name,dependencies" "")
+expected='{ "name": "pkg", "dependencies": { "a": "^1.1.0" }, "custom": { "x": 1 } }'
+check_json "dependency removed in source is removed on dist; unlisted field kept from dist" "$expected" "$actual"
 
 echo ""
 echo "================================"

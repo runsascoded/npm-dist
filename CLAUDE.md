@@ -46,7 +46,7 @@ On **first run** (no dist branch exists), the script auto-generates `package.jso
 2. Transforming paths (`./dist/index.js` → `./index.js`)
 3. Removing dev-only fields (`files`, `scripts`, `devDependencies`)
 
-On **subsequent runs**, it merges source metadata into the existing dist `package.json`, preserving any manual customizations while updating fields like `version`, `exports`, etc.
+On **subsequent runs**, it merges source metadata into the existing dist `package.json`: fields in `pkg_include` (or the defaults) are replaced wholesale from source (a top-level `+`, not jq's recursive `*`, so keys removed from e.g. `exports` or `dependencies` in source disappear from dist; a listed field absent from source is removed), while other fields keep their dist-branch values (manual customizations).
 
 You can customize this behavior with:
 - `pkg_include`: Fields to copy from source (default: `name,description,keywords,repository,author,license,homepage,bugs,exports`)

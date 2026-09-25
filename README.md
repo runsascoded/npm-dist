@@ -45,7 +45,7 @@ jobs:
 7. Pushes to the dist branch
 8. Outputs the dist SHA and install commands (in logs and as workflow annotations)
 
-On first run (no dist branch exists), it auto-generates `package.json` by transforming paths from source (`./dist/index.js` → `./index.js`). On subsequent runs, it preserves the dist branch's `package.json`.
+On first run (no dist branch exists), it auto-generates `package.json` by transforming paths from source (`./dist/index.js` → `./index.js`). On subsequent runs, it keeps the dist branch's `package.json` but replaces the fields taken from source (`pkg_include`, or the defaults) wholesale, so e.g. an export or dependency removed in source is removed from dist too; a listed field missing from source is removed. Other fields (manual edits on the dist branch) are kept.
 
 ## Using the dist branch
 

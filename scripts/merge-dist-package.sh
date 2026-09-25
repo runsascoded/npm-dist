@@ -7,7 +7,10 @@
 #
 # Behavior:
 # - $fields_csv is a comma-separated list of top-level fields to take from source
-#   (e.g. "name,version,exports,dependencies").
+#   (e.g. "name,version,exports,dependencies"). Source is authoritative for these: each
+#   replaces its dist counterpart wholesale (no deep merge, so keys removed from e.g.
+#   `exports` or `dependencies` in source are removed on dist too), and a listed field
+#   absent from source is removed from dist. Unlisted fields keep their dist values.
 # - When $preserve_dirs is empty, string values in merged fields have
 #   "./<build_dir>/" rewritten to "./" (flatten mode, the default).
 # - When $preserve_dirs is non-empty, no path transformation happens, since the
@@ -35,13 +38,7 @@ merge_dist_package_json() {
         )
       end;
     ($fields | split(",") | map(gsub("^\\s+|\\s+$"; ""))) as $field_list |
-    (reduce $field_list[] as $field ({}; . + (
-      if $src[$field] != null then
-        {($field): ($src[$field] | transform_paths)}
-      else
-        {}
-      end
-    ))) as $merge_obj |
-    $dist * $merge_obj | with_entries(select(.value != null))
+    (reduce $field_list[] as $field ({}; . + {($field): ($src[$field] | transform_paths)})) as $merge_obj |
+    $dist + $merge_obj | with_entries(select(.value != null))
   ' "$dist_json" "$source_json"
 }
